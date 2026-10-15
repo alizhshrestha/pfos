@@ -1,0 +1,8 @@
+spring:
+  application:
+    name: backend
+
+  mongodb:
+    uri: ${MONGODB_URI:mongodb://localhost:27017/pfos}
+  profiles:
+    active: dev
