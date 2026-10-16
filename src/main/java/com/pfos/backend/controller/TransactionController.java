@@ -64,10 +64,27 @@ public class TransactionController {
     @GetMapping
     public ApiResponse<PageResponse<TransactionResponse>> getHistory(
             @RequestParam(name = "page", defaultValue = "0") int page,
-            @RequestParam(name = "size", defaultValue = "20") int size) {
+            @RequestParam(name = "size", defaultValue = "20") int size,
+            @RequestParam(name = "from", required = false) String from,
+            @RequestParam(name = "to", required = false) String to,
+            @RequestParam(name = "categoryId", required = false) String categoryId,
+            @RequestParam(name = "transactionTypeId", required = false)
+            String transactionTypeId,
+            @RequestParam(name = "paymentMethodId", required = false)
+            String paymentMethodId,
+            @RequestParam(name = "search", required = false) String search) {
 
         Page<TransactionResponse> result = transactionService
-                .getHistory(page, size)
+                .getHistory(
+                        page,
+                        size,
+                        from,
+                        to,
+                        categoryId,
+                        transactionTypeId,
+                        paymentMethodId,
+                        search
+                )
                 .map(TransactionResponse::from);
 
         PageResponse<TransactionResponse> response = new PageResponse<>(

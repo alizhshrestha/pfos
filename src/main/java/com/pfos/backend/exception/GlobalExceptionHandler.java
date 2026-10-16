@@ -95,4 +95,14 @@ public class GlobalExceptionHandler {
                 "Invalid value for parameter: " + exception.getName()
         );
     }
+
+    @ExceptionHandler(InvalidRequestException.class)
+    public ResponseEntity<ApiErrorResponse> handleInvalidRequest(
+            InvalidRequestException exception) {
+
+        return badRequest(
+                "INVALID_REQUEST",
+                exception.getMessage()
+        );
+    }
 }

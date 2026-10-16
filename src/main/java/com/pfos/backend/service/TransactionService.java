@@ -31,6 +31,15 @@ import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.data.mongodb.core.query.Update;
 
+import com.pfos.backend.exception.InvalidRequestException;
+
+import org.springframework.data.domain.PageImpl;
+
+import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
+import java.util.List;
+import java.util.regex.Pattern;
+
 @Service
 @Validated
 public class TransactionService {
@@ -82,7 +91,16 @@ public class TransactionService {
         return findRequired(id);
     }
 
-    public Page<Transaction> getHistory(int page, int size){
+    public Page<Transaction> getHistory(
+            int page,
+            int size,
+            String from,
+            String to,
+            String categoryId,
+            String transactionTypeId,
+            String paymentMethodId,
+            String search) {
+
         if (page < 0) {
             throw new BusinessValidationException(
                     "page",
@@ -97,15 +115,78 @@ public class TransactionService {
             );
         }
 
+        LocalDate fromDate = parseFilterDate(from, "from");
+        LocalDate toDate = parseFilterDate(to, "to");
+
+        if (fromDate != null
+                && toDate != null
+                && fromDate.isAfter(toDate)) {
+
+            throw new BusinessValidationException(
+                    "from",
+                    "From date must be on or before to date."
+            );
+        }
+
+        String searchText = normalizeFilter(search);
+
+        if (searchText != null && searchText.length() > 500) {
+            throw new BusinessValidationException(
+                    "search",
+                    "Search must not exceed 500 characters."
+            );
+        }
+
+        // Every history query excludes soft-deleted transactions.
+        Query query = Query.query(
+                Criteria.where("deletedAt").is(null)
+        );
+
+        if (fromDate != null || toDate != null) {
+            Criteria dateCriteria = Criteria.where("transactionDate");
+
+            if (fromDate != null) {
+                dateCriteria.gte(fromDate.toString());
+            }
+
+            if (toDate != null) {
+                dateCriteria.lte(toDate.toString());
+            }
+
+            query.addCriteria(dateCriteria);
+        }
+
+        addExactFilter(query, "categoryId", categoryId);
+        addExactFilter(query, "transactionTypeId", transactionTypeId);
+        addExactFilter(query, "paymentMethodId", paymentMethodId);
+
+        if (searchText != null) {
+            query.addCriteria(
+                    Criteria.where("description")
+                            .regex(Pattern.quote(searchText), "i")
+            );
+        }
+
+        // Count before adding pagination.
+        long total = mongoTemplate.count(query, Transaction.class);
+
         Sort sort = Sort.by(
                 Sort.Order.desc("transactionDate"),
                 Sort.Order.desc("createdAt"),
                 Sort.Order.desc("id")
         );
 
-        return transactionRepository.findByDeletedAtIsNull(
-                PageRequest.of(page, size, sort)
+        PageRequest pageable = PageRequest.of(page, size, sort);
+
+        // Copy the criteria into a separate query for the requested page.
+        Query pageQuery = Query.of(query).with(pageable);
+
+        List<Transaction> transactions = mongoTemplate.find(
+                pageQuery,
+                Transaction.class
         );
+
+        return new PageImpl<>(transactions, pageable, total);
     }
 
     public Transaction update(
@@ -237,6 +318,48 @@ public class TransactionService {
         );
 
         transaction.setNotes(request.notes());
+    }
+
+
+    private LocalDate parseFilterDate(String value, String parameterName) {
+        if (value == null) {
+            return null;
+        }
+
+        // Reject blank values, surrounding spaces, and incorrect formats.
+        if (!value.matches("[0-9]{4}-[0-9]{2}-[0-9]{2}")) {
+            throw new InvalidRequestException(
+                    parameterName + " must be a valid date in YYYY-MM-DD format."
+            );
+        }
+
+        try {
+            return LocalDate.parse(value);
+        } catch (DateTimeParseException exception) {
+            throw new InvalidRequestException(
+                    parameterName + " must be a valid date in YYYY-MM-DD format."
+            );
+        }
+    }
+
+    private String normalizeFilter(String value) {
+        if (value == null) {
+            return null;
+        }
+
+        String normalized = value.strip();
+
+        return normalized.isEmpty() ? null : normalized;
+    }
+
+    private void addExactFilter(Query query, String field, String value) {
+        String normalized = normalizeFilter(value);
+
+        if (normalized != null) {
+            query.addCriteria(
+                    Criteria.where(field).is(normalized)
+            );
+        }
     }
 
 }
