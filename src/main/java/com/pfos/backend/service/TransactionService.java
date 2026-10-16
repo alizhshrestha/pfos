@@ -25,6 +25,12 @@ import java.math.RoundingMode;
 import java.time.Instant;
 import java.util.Objects;
 
+import org.springframework.data.mongodb.core.FindAndModifyOptions;
+import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.query.Criteria;
+import org.springframework.data.mongodb.core.query.Query;
+import org.springframework.data.mongodb.core.query.Update;
+
 @Service
 @Validated
 public class TransactionService {
@@ -36,17 +42,27 @@ public class TransactionService {
     private final CategoryRepository categoryRepository;
     private final TransactionTypeRepository transactionTypeRepository;
     private final PaymentMethodRepository paymentMethodRepository;
+    private final MongoTemplate mongoTemplate;
+
 
     public TransactionService(
             TransactionRepository transactionRepository,
             CategoryRepository categoryRepository,
             TransactionTypeRepository transactionTypeRepository,
-            PaymentMethodRepository paymentMethodRepository) {
+            PaymentMethodRepository paymentMethodRepository, MongoTemplate mongoTemplate) {
 
         this.transactionRepository = transactionRepository;
         this.categoryRepository = categoryRepository;
         this.transactionTypeRepository = transactionTypeRepository;
         this.paymentMethodRepository = paymentMethodRepository;
+        this.mongoTemplate = mongoTemplate;
+    }
+
+    private Query activeTransactionQuery(String id){
+        return Query.query(
+                Criteria.where("id").is(id)
+                        .and("deletedAt").is(null)
+        );
     }
 
     public Transaction create(
@@ -98,20 +114,51 @@ public class TransactionService {
 
         Transaction transaction = findRequired(id);
 
+        // Keep the existing validation and editable-field mapping.
         applyEditableFields(transaction, request);
-        transaction.setUpdatedAt(Instant.now());
 
-        return transactionRepository.save(transaction);
+        Update changes = new Update()
+                .set("transactionDate", transaction.getTransactionDate())
+                .set("description", transaction.getDescription())
+                .set("categoryId", transaction.getCategoryId())
+                .set("transactionTypeId", transaction.getTransactionTypeId())
+                .set("paymentMethodId", transaction.getPaymentMethodId())
+                .set("amount", transaction.getAmount())
+                .set("notes", transaction.getNotes())
+                .set("updatedAt", Instant.now());
+
+        Transaction updated = mongoTemplate.findAndModify(
+                activeTransactionQuery(id),
+                changes,
+                FindAndModifyOptions.options()
+                        .returnNew(true)
+                        .upsert(false),
+                Transaction.class
+        );
+
+        if (updated == null) {
+            throw new TransactionNotFoundException();
+        }
+
+        return updated;
     }
 
     public void delete(String id) {
-        Transaction transaction = findRequired(id);
-
         Instant now = Instant.now();
-        transaction.setDeletedAt(now);
-        transaction.setUpdatedAt(now);
 
-        transactionRepository.save(transaction);
+        Update changes = new Update()
+                .set("deletedAt", now)
+                .set("updatedAt", now);
+
+        var result = mongoTemplate.updateFirst(
+                activeTransactionQuery(id),
+                changes,
+                Transaction.class
+        );
+
+        if (result.getMatchedCount() == 0) {
+            throw new TransactionNotFoundException();
+        }
     }
 
     private Transaction findRequired(String id) {
