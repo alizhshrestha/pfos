@@ -36,5 +36,6 @@ public class Transaction {
 
     private Instant createdAt;
     private Instant updatedAt;
+    private Instant deletedAt;
 
 }

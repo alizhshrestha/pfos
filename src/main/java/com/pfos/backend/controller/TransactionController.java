@@ -13,6 +13,16 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.pfos.backend.dto.response.DeleteTransactionResponse;
+import com.pfos.backend.dto.response.PageResponse;
+
+import org.springframework.data.domain.Page;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+
 import java.net.URI;
 
 @RestController
@@ -38,4 +48,62 @@ public class TransactionController {
         return ResponseEntity.created(location)
                 .body(ApiResponse.ok(response));
     }
+
+
+    @GetMapping("/{id}")
+    public ApiResponse<TransactionResponse> getById(
+            @PathVariable("id") String id) {
+
+        TransactionResponse response = TransactionResponse.from(
+                transactionService.getById(id)
+        );
+
+        return ApiResponse.ok(response);
+    }
+
+    @GetMapping
+    public ApiResponse<PageResponse<TransactionResponse>> getHistory(
+            @RequestParam(name = "page", defaultValue = "0") int page,
+            @RequestParam(name = "size", defaultValue = "20") int size) {
+
+        Page<TransactionResponse> result = transactionService
+                .getHistory(page, size)
+                .map(TransactionResponse::from);
+
+        PageResponse<TransactionResponse> response = new PageResponse<>(
+                result.getContent(),
+                result.getNumber(),
+                result.getSize(),
+                result.getTotalElements(),
+                result.getTotalPages()
+        );
+
+        return ApiResponse.ok(response);
+    }
+
+    @PutMapping("/{id}")
+    public ApiResponse<TransactionResponse> update(
+            @PathVariable("id") String id,
+            @Valid @RequestBody CreateTransactionRequest request) {
+
+        TransactionResponse response = TransactionResponse.from(
+                transactionService.update(id, request)
+        );
+
+        return ApiResponse.ok(response);
+    }
+
+    @DeleteMapping("/{id}")
+    public ApiResponse<DeleteTransactionResponse> delete(
+            @PathVariable("id") String id) {
+
+        transactionService.delete(id);
+
+        return ApiResponse.ok(
+                new DeleteTransactionResponse(id, true)
+        );
+    }
+
+
+
 }
